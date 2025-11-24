@@ -61,8 +61,7 @@
 
         ;; Calculate initial LP tokens (geometric mean)
         (let (
-            (sqrt-result (sqrti (* initial-stx initial-sbtc)))
-            (initial-liquidity (get guess sqrt-result))
+            (initial-liquidity (sqrt-uint (* initial-stx initial-sbtc)))
         )
             (asserts! (>= initial-liquidity minimum-liquidity) err-insufficient-liquidity)
 
@@ -109,10 +108,13 @@
 
 ;; Withdraw STX from user's balance
 (define-public (withdraw-stx (amount uint))
-    (let ((user-balance (default-to u0 (map-get? user-balances-stx tx-sender))))
+    (let (
+        (user-balance (default-to u0 (map-get? user-balances-stx tx-sender)))
+        (recipient tx-sender)
+    )
         (asserts! (>= user-balance amount) err-insufficient-balance)
-        (try! (as-contract (stx-transfer? amount tx-sender (unwrap-panic (principal-of? tx-sender)))))
-        (map-set user-balances-stx tx-sender (- user-balance amount))
+        (try! (as-contract (stx-transfer? amount tx-sender recipient)))
+        (map-set user-balances-stx recipient (- user-balance amount))
         (ok amount)
     )
 )
@@ -145,9 +147,8 @@
 
             ;; Calculate LP tokens to mint
             (let (
-                (sqrt-result (sqrti (* stx-amount sbtc-amount)))
                 (lp-tokens (if (is-eq total-supply u0)
-                    (get guess sqrt-result)
+                    (sqrt-uint (* stx-amount sbtc-amount))
                     (min
                         (/ (* stx-amount total-supply) reserve-x)
                         (/ (* sbtc-amount total-supply) reserve-y)
@@ -399,27 +400,27 @@
 ;; private functions
 ;;
 
-;; Calculate square root using fold-based iteration (Babylonian method)
-;; This avoids circular dependencies by using fold instead of direct recursion
-(define-private (sqrti (n uint))
+;; Calculate square root using Newton's method (simplified)
+;; Returns the integer square root of n
+(define-private (sqrt-uint (n uint))
     (if (<= n u1)
-        {n: n, guess: n}
+        n
         (let ((initial-guess (/ n u2)))
-            (fold sqrti-step
+            (get result (fold sqrt-iteration
                 (list u1 u2 u3 u4 u5 u6 u7 u8 u9 u10 u11 u12 u13 u14 u15 u16 u17 u18 u19 u20)
-                {n: n, guess: initial-guess}
-            )
+                {n: n, guess: initial-guess, result: initial-guess}
+            ))
         )
     )
 )
 
-(define-private (sqrti-step (iteration uint) (state {n: uint, guess: uint}))
+(define-private (sqrt-iteration (iteration uint) (state {n: uint, guess: uint, result: uint}))
     (let (
         (n (get n state))
         (guess (get guess state))
         (new-guess (/ (+ guess (/ n guess)) u2))
     )
-        {n: n, guess: new-guess}
+        {n: n, guess: new-guess, result: new-guess}
     )
 )
 
